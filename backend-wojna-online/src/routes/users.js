@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
 
+// Tymczasowa „baza danych” w pamięci
 const users = [];
 
+// CREATE — POST /users
 router.post('/', (req, res) => {
-  // 👇 DIAGNOSTYCZNY LOG
-  console.log('REQ.BODY >>>', req.body);
-
   if (!req.body) {
     return res.status(400).json({
       message: 'Brak body w request',
@@ -25,7 +24,7 @@ router.post('/', (req, res) => {
     id: users.length + 1,
     nick,
     email,
-    password,
+    password, // ❗ tylko wewnętrznie
     wins: 0,
     losses: 0,
   };
@@ -37,6 +36,19 @@ router.post('/', (req, res) => {
     nick: newUser.nick,
     email: newUser.email,
   });
+});
+
+// READ — GET /users
+router.get('/', (req, res) => {
+  const safeUsers = users.map(user => ({
+    id: user.id,
+    nick: user.nick,
+    email: user.email,
+    wins: user.wins,
+    losses: user.losses,
+  }));
+
+  res.json(safeUsers);
 });
 
 module.exports = router;
