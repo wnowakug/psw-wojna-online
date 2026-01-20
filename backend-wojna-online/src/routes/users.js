@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcrypt');
 
 // Tymczasowa „baza danych” w pamięci
-const users = [];
+const users = require('../data/users');   
+
 
 // CREATE — POST /users
 router.post('/', (req, res) => {
@@ -20,14 +22,16 @@ router.post('/', (req, res) => {
     });
   }
 
-  const newUser = {
-    id: users.length + 1,
-    nick,
-    email,
-    password, // ❗ tylko wewnętrznie
-    wins: 0,
-    losses: 0,
-  };
+   const hashedPassword = bcrypt.hashSync(password, 10);
+
+   const newUser = {
+   id: users.length + 1,
+   nick,
+   email,
+   password: hashedPassword,
+   wins: 0,
+   losses: 0,
+   };
 
   users.push(newUser);
 
