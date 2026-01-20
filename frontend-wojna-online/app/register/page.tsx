@@ -1,20 +1,22 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { registerUser } from '@/lib/api';
 
 export default function RegisterPage() {
   const [nick, setNick] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
       await registerUser({ nick, email, password });
-      alert('Rejestracja udana');
-    } catch (err) {
+      router.push('/login');
+    } catch {
       alert('Błąd rejestracji');
     }
   };

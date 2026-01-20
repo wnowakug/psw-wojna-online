@@ -1,9 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcrypt');
 
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 const users = require('../data/users');
+
+const authMiddleware = require('../middleware/auth');
+
 
 // POST /auth/login
 router.post('/login', (req, res) => {
@@ -26,30 +30,35 @@ router.post('/login', (req, res) => {
 
   if (!user) {
     return res.status(401).json({
-      message: 'Nie znaleziono użytkownika w naszej bazie',
+      message: 'Nieprawidłowy email lub hasło',
     });
   }
 
-   const passwordMatch = bcrypt.compareSync(password, user.password);
+  const passwordMatch = bcrypt.compareSync(password, user.password);
 
-   if (!passwordMatch) {
-   return res.status(401).json({
+  if (!passwordMatch) {
+    return res.status(401).json({
       message: 'Nieprawidłowy email lub hasło',
-   });
-   }
+    });
+  }
 
+  const token = jwt.sign(
+    { id: user.id, email: user.email },
+    req.app.get('jwt-secret'),
+    { expiresIn: '1h' }
+  );
 
-  // login OK
   res.json({
     message: 'Zalogowano pomyślnie',
-    user: {
-      id: user.id,
-      nick: user.nick,
-      email: user.email,
-      wins: user.wins,
-      losses: user.losses,
-    },
+    token,
   });
 });
 
 module.exports = router;
+
+router.get('/me', authMiddleware, (req, res) => {
+  res.json({
+    user: req.user,
+  });
+});
+

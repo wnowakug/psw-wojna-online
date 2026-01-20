@@ -11,6 +11,10 @@ type LoginData = {
   password: string;
 };
 
+type LoginResponse = {
+  token: string;
+};
+
 export async function registerUser(data: RegisterData) {
   const response = await fetch(`${API_URL}/users`, {
     method: 'POST',
@@ -40,17 +44,31 @@ export async function loginUser(data: LoginData) {
     throw new Error('Logowanie nie powiodło się');
   }
 
-  return response.json();
+  const result: LoginResponse = await response.json();
+
+  // 🔐 ZAPIS JWT
+  localStorage.setItem('token', result.token);
+
+  return result;
 }
 
 export async function getProfile() {
+  const token = localStorage.getItem('token');
+
+  if (!token) {
+    throw new Error('Brak tokena');
+  }
+
   const response = await fetch(`${API_URL}/auth/me`, {
-    credentials: 'include',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   if (!response.ok) {
     throw new Error('Nie udało się pobrać profilu');
   }
 
-  return response.json();
+  const data = await response.json();
+  return data.user;
 }

@@ -8,6 +8,9 @@ const authRoutes = require('./routes/auth');
 const app = express();
 const PORT = 4000;
 
+const JWT_SECRET = 'NiktNigdyNieOdgadnieTegoKlucza';
+app.set('jwt-secret', JWT_SECRET);
+
 app.use(cors());
 app.use(express.json());
 

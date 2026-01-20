@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { getProfile } from '@/lib/api';
 
 type Profile = {
@@ -12,12 +13,16 @@ type Profile = {
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     getProfile()
       .then(setProfile)
-      .catch(() => alert('Brak dostępu'));
-  }, []);
+      .catch(() => {
+        localStorage.removeItem('token');
+        router.push('/login');
+      });
+  }, [router]);
 
   if (!profile) {
     return <p>Ładowanie...</p>;
