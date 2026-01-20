@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getProfile } from '@/lib/api';
 
 type Profile = {
   nick: string;
@@ -13,13 +14,9 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
 
   useEffect(() => {
-    // tymczasowe dane „na sucho”
-    setProfile({
-      nick: 'Player1',
-      email: 'player1@example.com',
-      wins: 3,
-      losses: 1,
-    });
+    getProfile()
+      .then(setProfile)
+      .catch(() => alert('Brak dostępu'));
   }, []);
 
   if (!profile) {

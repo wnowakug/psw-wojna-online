@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { registerUser } from '@/lib/api';
 
 export default function RegisterPage() {
   const [nick, setNick] = useState('');
@@ -10,7 +11,12 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    console.log({ nick, email, password });
+    try {
+      await registerUser({ nick, email, password });
+      alert('Rejestracja udana');
+    } catch (err) {
+      alert('Błąd rejestracji');
+    }
   };
 
   return (

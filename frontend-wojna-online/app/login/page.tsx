@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { loginUser } from '@/lib/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -9,7 +10,12 @@ export default function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    console.log({ email, password });
+    try {
+      await loginUser({ email, password });
+      alert('Zalogowano');
+    } catch {
+      alert('Błąd logowania');
+    }
   };
 
   return (
