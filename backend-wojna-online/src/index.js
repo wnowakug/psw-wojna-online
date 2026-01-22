@@ -22,6 +22,12 @@ app.get('/', (req, res) => {
   res.send('Backend działa');
 });
 
-app.listen(PORT, () => {
-  console.log(`Serwer działa na porcie ${PORT}`);
+const http = require('http');
+const initChat = require('./ws/chat');
+
+const server = http.createServer(app);
+initChat(server, app);
+
+server.listen(PORT, () => {
+  console.log(`Server działa na porcie ${PORT}`);
 });
