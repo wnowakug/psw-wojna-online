@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import LogoutButton from './components/LogoutButton';
+
 
 export const metadata = {
   title: 'Wojna Online',
@@ -16,6 +18,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <li><a href="/login">Logowanie</a></li>
               <li><a href="/register">Rejestracja</a></li>
               <li><a href="/profile">Profil</a></li>
+              <li><LogoutButton /></li>
             </ul>
           </nav>
           <hr />
