@@ -1,35 +1,19 @@
 const jwt = require('jsonwebtoken');
 
-function authMiddleware(req, res, next) {
-  const authHeader = req.headers['authorization'];
+module.exports = function auth(req, res, next) {
+  const authHeader = req.headers.authorization;
 
   if (!authHeader) {
-    return res.status(401).json({
-      message: 'Brak nagłówka Authorization',
-    });
+    return res.status(401).json({ message: 'Brak Authorization' });
   }
 
-  const token = authHeader.split(' ')[1]; // Bearer TOKEN
-
-  if (!token) {
-    return res.status(401).json({
-      message: 'Brak tokena',
-    });
-  }
+  const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(
-      token,
-      req.app.get('jwt-secret')
-    );
-
-    req.user = decoded; // zapisujemy dane użytkownika
+    const decoded = jwt.verify(token, req.app.get('jwt-secret'));
+    req.user = decoded;
     next();
-  } catch (err) {
-    return res.status(401).json({
-      message: 'Nieprawidłowy lub wygasły token',
-    });
+  } catch {
+    return res.status(401).json({ message: 'Nieprawidłowy token' });
   }
-}
-
-module.exports = authMiddleware;
+};
