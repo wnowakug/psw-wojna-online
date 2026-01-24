@@ -4,6 +4,8 @@ const http = require('http');
 
 const usersRoutes = require('./routes/users');
 const authRoutes = require('./routes/auth');
+const gamesRoutes = require('./routes/games');
+
 
 const app = express();
 const PORT = 4000;
@@ -15,6 +17,7 @@ app.set('jwt-secret', 'super_tajny_klucz');
 
 app.use('/users', usersRoutes);
 app.use('/auth', authRoutes);
+app.use('/games', gamesRoutes);
 
 const server = http.createServer(app);
 
