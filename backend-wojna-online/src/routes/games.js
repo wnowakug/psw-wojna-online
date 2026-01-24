@@ -1,5 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
+const users = require('../data/users');
+
 
 const { startGame, playRound, getWinner } = require('../game/game');
 const {
@@ -48,15 +50,29 @@ router.post('/:id/round', auth, (req, res) => {
 
   const result = playRound(game);
 
-  if (result.finished) {
-    const winner = getWinner(game);
-    deleteGame(game.id);
+   if (result.finished) {
+   const winner = getWinner(game);
+   const [p1, p2] = game.players;
 
-    return res.json({
+   const user1 = users.find(u => u.id === p1);
+   const user2 = users.find(u => u.id === p2);
+
+   if (winner === p1) {
+      user1.wins++;
+      user2.losses++;
+   } else if (winner === p2) {
+      user2.wins++;
+      user1.losses++;
+   }
+
+   deleteGame(game.id);
+
+   return res.json({
       ...result,
       winner
-    });
-  }
+   });
+   }
+
 
   res.json(result);
 });
