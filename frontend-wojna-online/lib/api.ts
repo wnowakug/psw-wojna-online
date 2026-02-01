@@ -1,5 +1,17 @@
 const API_URL = 'http://localhost:4000';
 
+type RegisterData = {
+  nick: string;
+  email: string;
+  password: string;
+};
+
+type LoginData = {
+  email: string;
+  password: string;
+};
+
+
 export async function registerUser(data: {
   nick: string;
   email: string;
@@ -15,21 +27,26 @@ export async function registerUser(data: {
   return res.json();
 }
 
-export async function loginUser(data: {
-  email: string;
-  password: string;
-}) {
-  const res = await fetch(`${API_URL}/auth/login`, {
+export async function loginUser(data: LoginData) {
+  const response = await fetch(`${API_URL}/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(data),
   });
 
-  if (!res.ok) throw new Error('Błąd logowania');
+  if (!response.ok) {
+    throw new Error('Logowanie nie powiodło się');
+  }
 
-  const result = await res.json();
+  const result = await response.json();
+
   localStorage.setItem('token', result.token);
+
+  return result;
 }
+
 
 export async function getProfile() {
   const token = localStorage.getItem('token');

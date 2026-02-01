@@ -1,14 +1,14 @@
 const mqtt = require('mqtt');
-
-const { playRound, getWinner } = require('../game/game');
 const { getGame, deleteGame } = require('../game/activeGames');
 const users = require('../data/users');
+console.log('GAME MQTT FILE LOADED');
+
 
 function initGameMQTT() {
   const client = mqtt.connect('mqtt://localhost:1883');
 
   client.on('connect', () => {
-    console.log('MQTT connected');
+    console.log('MQTT connected (game)');
     client.subscribe('game/+/action');
   });
 
@@ -20,44 +20,101 @@ function initGameMQTT() {
     const game = getGame(gameId);
     if (!game) return;
 
+    let payload;
     try {
-      const payload = JSON.parse(message.toString());
+      payload = JSON.parse(message.toString());
+    } catch {
+      return;
+    }
 
-      if (payload.type !== 'PLAY_ROUND') return;
+    // GRACZ ZAGRYWA KARTĘ
+    if (payload.type !== 'PLAY_CARD') return;
 
-      const result = playRound(game);
+    const playerId = payload.playerId;
+    if (!playerId) return;
+    if (!game.players.includes(playerId)) return;
 
-      if (result.finished) {
-        const winner = getWinner(game);
-        const [p1, p2] = game.players;
+    // jeśli gracz już zagrał w tej rundzie
+    if (game.currentRound.plays[playerId]) return;
 
-        const u1 = users.find(u => u.id === p1);
-        const u2 = users.find(u => u.id === p2);
+    // dobierz kartę
+    const card = game.decks[playerId].shift();
+    game.currentRound.plays[playerId] = card;
 
-        if (winner === p1) {
+    // wysyłamy stan częściowy
+    client.publish(
+      `game/${gameId}/state`,
+      JSON.stringify({
+        type: 'ROUND_UPDATE',
+        round: game.round,
+        plays: game.currentRound.plays,
+        scores: game.scores
+      })
+    );
+
+    const [p1, p2] = game.players;
+    const c1 = game.currentRound.plays[p1];
+    const c2 = game.currentRound.plays[p2];
+
+    // czekamy aż obaj zagrają
+    if (!c1 || !c2) return;
+
+    // rozstrzygnięcie rundy
+    let roundWinner = null;
+
+    if (c1.value > c2.value) {
+      game.scores[p1]++;
+      roundWinner = p1;
+    } else if (c2.value > c1.value) {
+      game.scores[p2]++;
+      roundWinner = p2;
+    }
+
+    client.publish(
+      `game/${gameId}/state`,
+      JSON.stringify({
+        type: 'ROUND_RESULT',
+        round: game.round,
+        cards: { [p1]: c1, [p2]: c2 },
+        winner: roundWinner,
+        scores: game.scores
+      })
+    );
+
+    // reset rundy
+    game.currentRound.plays[p1] = null;
+    game.currentRound.plays[p2] = null;
+    game.round++;
+
+    // koniec gry
+    if (game.round > 26) {
+      const finalWinner =
+        game.scores[p1] > game.scores[p2] ? p1 : p2;
+
+      // aktualizacja statystyk użytkowników
+      const u1 = users.find(u => u.id === p1);
+      const u2 = users.find(u => u.id === p2);
+
+      if (u1 && u2) {
+        if (finalWinner === p1) {
           u1.wins++;
           u2.losses++;
-        } else if (winner === p2) {
+        } else if (finalWinner === p2) {
           u2.wins++;
           u1.losses++;
         }
-
-        deleteGame(game.id);
-
-        client.publish(
-          `game/${gameId}/state`,
-          JSON.stringify({ ...result, winner })
-        );
-
-        return;
       }
 
       client.publish(
         `game/${gameId}/state`,
-        JSON.stringify(result)
+        JSON.stringify({
+          type: 'GAME_OVER',
+          winner: finalWinner,
+          scores: game.scores
+        })
       );
-    } catch (err) {
-      console.error('MQTT game error:', err.message);
+
+      deleteGame(gameId);
     }
   });
 }
