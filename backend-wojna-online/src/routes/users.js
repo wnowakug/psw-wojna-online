@@ -54,4 +54,16 @@ router.get('/me', auth, (req, res) => {
   });
 });
 
+// GET /users/:id
+router.get('/:id', (req, res) => {
+  const user = users.find(u => u.id === Number(req.params.id));
+  if (!user) return res.status(404).json({ message: 'Nie znaleziono użytkownika' });
+
+  res.json({
+    id: user.id,
+    nick: user.nick
+  });
+});
+
+
 module.exports = router;

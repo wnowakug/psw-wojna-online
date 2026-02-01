@@ -87,3 +87,18 @@ export async function joinGame(gameId: string, token: string) {
   if (!res.ok) throw new Error('Nie udało się dołączyć do gry');
   return res.json();
 }
+
+
+export async function getUserById(id: number) {
+  const res = await fetch(`http://localhost:4000/users/${id}`);
+  if (!res.ok) throw new Error('Nie udało się pobrać użytkownika');
+  return res.json();
+}
+
+export async function getGame(gameId: string, token: string) {
+  const res = await fetch(`http://localhost:4000/games/${gameId}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error('Nie udało się pobrać gry');
+  return res.json();
+}

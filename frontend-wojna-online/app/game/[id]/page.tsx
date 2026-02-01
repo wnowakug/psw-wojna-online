@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import client from '@/lib/mqtt';
 import { getUserIdFromToken } from '@/lib/auth';
-import { joinGame } from '@/lib/api';
+import { joinGame, getUserById, getGame } from '@/lib/api';
+import { io } from 'socket.io-client';
 
 type RoundUpdate = {
   type: 'ROUND_UPDATE';
@@ -39,39 +40,83 @@ export default function GamePage() {
   const [scores, setScores] = useState<Record<number, number>>({});
   const [lastResult, setLastResult] = useState<RoundResult | null>(null);
   const [gameOver, setGameOver] = useState<GameOver | null>(null);
+  const [ready, setReady] = useState(false);
+  const [myNick, setMyNick] = useState('');
+  const [opponentNick, setOpponentNick] = useState('');
 
-  // odczyt userId z JWT po stronie przeglądarki
+  // USER ID z JWT
   useEffect(() => {
     const id = getUserIdFromToken();
     setUserId(id);
   }, []);
 
-   useEffect(() => {
-   const id = getUserIdFromToken();
-   console.log('USER ID FROM TOKEN:', id);
-   setUserId(id);
-   }, []);
+  // SOCKET.IO – pokój gry
+  useEffect(() => {
+    if (!gameId || !userId) return;
 
-   useEffect(() => {
-      const join = async () => {
-         const token = localStorage.getItem('token');
-         if (!token) return;
+    const socket = io('http://localhost:4000');
 
-         await joinGame(gameId, token);
-      };
+    socket.emit('join-game-room', gameId);
 
-      if (gameId) join();
-      }, [gameId]);
+    socket.on('player-joined', () => {
+      console.log('Drugi gracz dołączył');
+      setReady(true);
+    });
 
+    socket.on('room-ready', () => {
+      setReady(true);
+    });
 
-  // subskrypcja MQTT
+    return () => {
+      socket.disconnect();
+    };
+  }, [gameId, userId]);
+
+  // DOŁĄCZENIE DO GRY (REST)
+  useEffect(() => {
+    const join = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      await joinGame(gameId, token);
+    };
+
+    if (gameId) join();
+  }, [gameId]);
+
+  // POBRANIE NICKÓW GRACZY
+  useEffect(() => {
+    const fetchPlayers = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token || !userId) return;
+
+        const game = await getGame(gameId, token);
+        if (!game.players || game.players.length < 2) return;
+
+        const opponentId = game.players.find((id: number) => id !== userId);
+        if (!opponentId) return;
+
+        const me = await getUserById(userId);
+        const opponent = await getUserById(opponentId);
+
+        setMyNick(me.nick);
+        setOpponentNick(opponent.nick);
+      } catch (err) {
+        console.error('Nick fetch error', err);
+      }
+    };
+
+    fetchPlayers();
+  }, [gameId, userId]);
+
+  // MQTT SUBSKRYPCJA STANU GRY
   useEffect(() => {
     if (!gameId) return;
 
     const topic = `game/${gameId}/state`;
     client.subscribe(topic);
 
-    const handler = (t: string, message: Buffer) => {
+    const handler = (t: string, message: any) => {
       if (t !== topic) return;
 
       const data: GameMessage = JSON.parse(message.toString());
@@ -104,27 +149,17 @@ export default function GamePage() {
     };
   }, [gameId]);
 
-   const playCard = () => {
-   console.log('BUTTON CLICKED');
-   console.log('userId =', userId);
-   console.log('gameOver =', gameOver);
+  const playCard = () => {
+    if (!userId || gameOver || !ready) return;
 
-   if (!userId || gameOver) {
-      console.log('BLOCKED');
-      return;
-   }
-
-   console.log('SENDING MQTT');
-
-   client.publish(
+    client.publish(
       `game/${gameId}/action`,
       JSON.stringify({
-         type: 'PLAY_CARD',
-         playerId: userId
+        type: 'PLAY_CARD',
+        playerId: userId
       })
-   );
-   };
-
+    );
+  };
 
   const myCard = userId ? plays[userId] : null;
   const opponentCard =
@@ -136,16 +171,18 @@ export default function GamePage() {
     <main style={{ padding: 20 }}>
       <h1>Gra ID: {gameId}</h1>
 
+      {!ready && <p>Oczekiwanie na drugiego gracza...</p>}
+
       <p>Runda: {round}</p>
 
-      <button onClick={playCard} disabled={!userId || !!gameOver}>
+      <button onClick={playCard} disabled={!userId || !!gameOver || !ready}>
         Zagraj kartę
       </button>
 
-      <h2>Twoja karta</h2>
+      <h2>Twoja karta ({myNick})</h2>
       <pre>{myCard ? JSON.stringify(myCard, null, 2) : '—'}</pre>
 
-      <h2>Karta przeciwnika</h2>
+      <h2>Karta przeciwnika ({opponentNick})</h2>
       <pre>{opponentCard ? JSON.stringify(opponentCard, null, 2) : '—'}</pre>
 
       <h2>Punkty</h2>
@@ -157,7 +194,11 @@ export default function GamePage() {
           <pre>{JSON.stringify(lastResult.cards, null, 2)}</pre>
           <p>
             Zwycięzca rundy:{' '}
-            {lastResult.winner === null ? 'Remis' : `Gracz ${lastResult.winner}`}
+            {lastResult.winner === null
+              ? 'Remis'
+              : lastResult.winner === userId
+              ? myNick
+              : opponentNick}
           </p>
         </>
       )}
@@ -165,7 +206,10 @@ export default function GamePage() {
       {gameOver && (
         <>
           <h2>Koniec gry</h2>
-          <p>Zwycięzca gry: Gracz {gameOver.winner}</p>
+          <p>
+            Zwycięzca gry:{' '}
+            {gameOver.winner === userId ? myNick : opponentNick}
+          </p>
         </>
       )}
     </main>

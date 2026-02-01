@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const initGameMQTT = require('./mqtt/game');
+const { Server } = require('socket.io');
 
 
 const usersRoutes = require('./routes/users');
@@ -22,6 +23,16 @@ app.use('/auth', authRoutes);
 app.use('/games', gamesRoutes);
 
 const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: { origin: '*' }
+});
+
+app.set('io', io);
+
+const initLobby = require('./socket/lobby');
+initLobby(io);
+
 
 initGameMQTT();
 
