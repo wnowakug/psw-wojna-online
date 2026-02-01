@@ -51,26 +51,24 @@ export default function GamePage() {
   }, []);
 
   // SOCKET.IO – pokój gry
-  useEffect(() => {
-    if (!gameId || !userId) return;
+   useEffect(() => {
+      if (!gameId || !userId) return;
 
-    const socket = io('http://localhost:4000');
+      const socket = io('http://localhost:4000');
 
-    socket.emit('join-game-room', gameId);
+      socket.emit('join-game-room', gameId);
 
-    socket.on('player-joined', () => {
-      console.log('Drugi gracz dołączył');
-      setReady(true);
-    });
+      socket.on('room-ready', () => {
+         console.log('Obaj gracze gotowi');
+         setReady(true);
+      });
 
-    socket.on('room-ready', () => {
-      setReady(true);
-    });
+      return () => {
+         socket.disconnect(); // ✅ cleanup
+      };
+   }, [gameId, userId]);
 
-    return () => {
-      socket.disconnect();
-    };
-  }, [gameId, userId]);
+
 
   // DOŁĄCZENIE DO GRY (REST)
   useEffect(() => {
@@ -84,30 +82,32 @@ export default function GamePage() {
   }, [gameId]);
 
   // POBRANIE NICKÓW GRACZY
-  useEffect(() => {
-    const fetchPlayers = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token || !userId) return;
+   useEffect(() => {
+   const fetchPlayers = async () => {
+      const token = localStorage.getItem('token');
+      if (!token || !userId) return;
 
-        const game = await getGame(gameId, token);
-        if (!game.players || game.players.length < 2) return;
+      const game = await getGame(gameId, token);
 
-        const opponentId = game.players.find((id: number) => id !== userId);
-        if (!opponentId) return;
-
-        const me = await getUserById(userId);
-        const opponent = await getUserById(opponentId);
-
-        setMyNick(me.nick);
-        setOpponentNick(opponent.nick);
-      } catch (err) {
-        console.error('Nick fetch error', err);
+      // ⛔ jeśli jeszcze nie ma 2 graczy — spróbuj ponownie za chwilę
+      if (game.players.length < 2) {
+         setTimeout(fetchPlayers, 1000);
+         return;
       }
-    };
 
-    fetchPlayers();
-  }, [gameId, userId]);
+      const opponentId = game.players.find((id: number) => id !== userId);
+      if (!opponentId) return;
+
+      const me = await getUserById(userId);
+      const opponent = await getUserById(opponentId);
+
+      setMyNick(me.nick);
+      setOpponentNick(opponent.nick);
+   };
+
+   fetchPlayers();
+   }, [gameId, userId]);
+
 
   // MQTT SUBSKRYPCJA STANU GRY
   useEffect(() => {
@@ -186,7 +186,15 @@ export default function GamePage() {
       <pre>{opponentCard ? JSON.stringify(opponentCard, null, 2) : '—'}</pre>
 
       <h2>Punkty</h2>
-      <pre>{JSON.stringify(scores, null, 2)}</pre>
+      <ul>
+      <li>{myNick}: {userId ? scores[userId] ?? 0 : 0}</li>
+      <li>{opponentNick}: {
+         userId
+            ? scores[Number(Object.keys(scores).find(id => Number(id) !== userId))] ?? 0
+            : 0
+      }</li>
+      </ul>
+
 
       {lastResult && (
         <>

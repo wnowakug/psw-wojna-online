@@ -1,11 +1,10 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 
-const { createGame } = require('../game/game');
+const { createDeck } = require('../game/game');
 const {
   saveGame,
   getGame,
-  deleteGame,
   getAllGames
 } = require('../game/activeGames');
 
@@ -13,17 +12,34 @@ const router = express.Router();
 
 /**
  * POST /games
- * Tworzy nową grę z jednym graczem
+ * Tworzy nową grę z jednym graczem (czeka na drugiego)
  */
 router.post('/', auth, (req, res) => {
   const userId = req.user.id;
 
-  const game = createGame([userId]);
-  saveGame(game);
+  const game = {
+    id: Date.now().toString(),
+    players: [userId],
+    decks: {},              // talie rozdamy dopiero gdy będzie 2 graczy
+    scores: {
+      [userId]: 0           // 🔥 zawsze start od 0
+    },
+    currentRound: {
+      plays: {
+        [userId]: null
+      }
+    },
+    round: 1
+  };
 
+  saveGame(game);
   res.json(game);
 });
 
+/**
+ * POST /games/:id/join
+ * Drugi gracz dołącza do gry
+ */
 router.post('/:id/join', auth, (req, res) => {
   const game = getGame(req.params.id);
   if (!game) return res.status(404).json({ message: 'Gra nie istnieje' });
@@ -38,13 +54,15 @@ router.post('/:id/join', auth, (req, res) => {
     return res.status(400).json({ message: 'Gra jest pełna' });
   }
 
-  // 🔹 Dodajemy drugiego gracza
+  // ➕ Dodajemy drugiego gracza
   game.players.push(userId);
 
-  // 🔹 Jeśli to moment, gdy gra ma już 2 graczy — rozdajemy karty
-  if (game.players.length === 2) {
-    const { createDeck } = require('../game/game');
+  // 🔥 Inicjalizacja punktów i plays
+  game.scores[userId] = 0;
+  game.currentRound.plays[userId] = null;
 
+  // 🎴 Gdy mamy już 2 graczy — rozdajemy karty
+  if (game.players.length === 2) {
     const deck = createDeck();
     const half = Math.floor(deck.length / 2);
 
@@ -54,12 +72,8 @@ router.post('/:id/join', auth, (req, res) => {
     game.decks[p2] = deck.slice(half);
   }
 
-  game.currentRound.plays[userId] = null;
-  game.scores[userId] = 0;
-
   res.json(game);
 });
-
 
 /**
  * GET /games/:id
@@ -67,10 +81,7 @@ router.post('/:id/join', auth, (req, res) => {
  */
 router.get('/:id', auth, (req, res) => {
   const game = getGame(req.params.id);
-
-  if (!game) {
-    return res.status(404).json({ message: 'Gra nie istnieje' });
-  }
+  if (!game) return res.status(404).json({ message: 'Gra nie istnieje' });
 
   res.json(game);
 });

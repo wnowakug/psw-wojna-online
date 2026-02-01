@@ -1,19 +1,18 @@
-function initLobby(io) {
+module.exports = function initLobby(io) {
   io.on('connection', (socket) => {
-    console.log('Socket connected:', socket.id);
 
     socket.on('join-game-room', (gameId) => {
-      socket.join(`game:${gameId}`);
-      console.log(`Socket ${socket.id} joined room game:${gameId}`);
+      const roomName = `game:${gameId}`;
+      socket.join(roomName);
 
-      // informujemy innych w pokoju
-      socket.to(`game:${gameId}`).emit('player-joined');
+      const room = io.sockets.adapter.rooms.get(roomName);
+      const size = room ? room.size : 0;
+
+      // gdy są 2 osoby — obie dostają sygnał startu
+      if (size === 2) {
+        io.to(roomName).emit('room-ready');
+      }
     });
 
-    socket.on('disconnect', () => {
-      console.log('Socket disconnected:', socket.id);
-    });
   });
-}
-
-module.exports = initLobby;
+};
