@@ -1,9 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
-const users = require('../data/users');
 
-
-const { startGame, playRound, getWinner } = require('../game/game');
+const { createGame } = require('../game/game');
 const {
   saveGame,
   getGame,
@@ -15,73 +13,57 @@ const router = express.Router();
 
 /**
  * POST /games
- * Tworzy nową grę
+ * Tworzy nową grę z jednym graczem
  */
 router.post('/', auth, (req, res) => {
-  console.log(req.body);
+  const userId = req.user.id;
 
-  const { opponentId } = req.body;
-
-  if (!opponentId) {
-    return res.status(400).json({ message: 'Brak opponentId' });
-  }
-
-  const game = startGame(req.user.id, opponentId);
+  const game = createGame([userId]);
   saveGame(game);
 
-  res.status(201).json({
-    gameId: game.id,
-    players: game.players
-  });
+  res.json(game);
 });
 
-/**
- * POST /games/:id/round
- * Rozgrywa jedną rundę
- */
-router.post('/:id/round', auth, (req, res) => {
+router.post('/:id/join', auth, (req, res) => {
   const game = getGame(req.params.id);
+  if (!game) return res.status(404).json({ message: 'Gra nie istnieje' });
 
-  if (!game) {
-    return res.status(404).json({ message: 'Gra nie istnieje' });
+  const userId = req.user.id;
+
+  if (game.players.includes(userId)) {
+    return res.json(game);
   }
 
-  if (!game.players.includes(req.user.id)) {
-    return res.status(403).json({ message: 'Nie jesteś graczem tej gry' });
+  if (game.players.length >= 2) {
+    return res.status(400).json({ message: 'Gra jest pełna' });
   }
 
-  const result = playRound(game);
+  // 🔹 Dodajemy drugiego gracza
+  game.players.push(userId);
 
-   if (result.finished) {
-   const winner = getWinner(game);
-   const [p1, p2] = game.players;
+  // 🔹 Jeśli to moment, gdy gra ma już 2 graczy — rozdajemy karty
+  if (game.players.length === 2) {
+    const { createDeck } = require('../game/game');
 
-   const user1 = users.find(u => u.id === p1);
-   const user2 = users.find(u => u.id === p2);
+    const deck = createDeck();
+    const half = Math.floor(deck.length / 2);
 
-   if (winner === p1) {
-      user1.wins++;
-      user2.losses++;
-   } else if (winner === p2) {
-      user2.wins++;
-      user1.losses++;
-   }
+    const [p1, p2] = game.players;
 
-   deleteGame(game.id);
+    game.decks[p1] = deck.slice(0, half);
+    game.decks[p2] = deck.slice(half);
+  }
 
-   return res.json({
-      ...result,
-      winner
-   });
-   }
+  game.currentRound.plays[userId] = null;
+  game.scores[userId] = 0;
 
-
-  res.json(result);
+  res.json(game);
 });
+
 
 /**
  * GET /games/:id
- * Stan gry
+ * Pobiera stan gry
  */
 router.get('/:id', auth, (req, res) => {
   const game = getGame(req.params.id);
@@ -95,7 +77,7 @@ router.get('/:id', auth, (req, res) => {
 
 /**
  * GET /games
- * Lista aktywnych gier 
+ * Lista aktywnych gier
  */
 router.get('/', auth, (req, res) => {
   res.json(getAllGames());

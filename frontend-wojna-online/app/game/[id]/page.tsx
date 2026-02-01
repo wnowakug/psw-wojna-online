@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import client from '@/lib/mqtt';
 import { getUserIdFromToken } from '@/lib/auth';
+import { joinGame } from '@/lib/api';
 
 type RoundUpdate = {
   type: 'ROUND_UPDATE';
@@ -50,6 +51,17 @@ export default function GamePage() {
    console.log('USER ID FROM TOKEN:', id);
    setUserId(id);
    }, []);
+
+   useEffect(() => {
+      const join = async () => {
+         const token = localStorage.getItem('token');
+         if (!token) return;
+
+         await joinGame(gameId, token);
+      };
+
+      if (gameId) join();
+      }, [gameId]);
 
 
   // subskrypcja MQTT

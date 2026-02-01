@@ -63,3 +63,27 @@ export async function getProfile() {
 
   return res.json();
 }
+
+export async function createGame(token: string) {
+  const res = await fetch('http://localhost:4000/games', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) throw new Error('Nie udało się utworzyć gry');
+  return res.json();
+}
+
+export async function joinGame(gameId: string, token: string) {
+  const res = await fetch(`http://localhost:4000/games/${gameId}/join`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!res.ok) throw new Error('Nie udało się dołączyć do gry');
+  return res.json();
+}
