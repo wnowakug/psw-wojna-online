@@ -18,6 +18,8 @@ const router = express.Router();
  * Tworzy nową grę
  */
 router.post('/', auth, (req, res) => {
+  console.log(req.body);
+
   const { opponentId } = req.body;
 
   if (!opponentId) {

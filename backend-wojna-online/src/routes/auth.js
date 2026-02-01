@@ -2,11 +2,14 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const users = require('../data/users');
+console.log("test");
 
 const router = express.Router();
 
 // POST /auth/login
 router.post('/login', (req, res) => {
+  console.log('LOGIN BODY:', req.body);
+
   const { email, password } = req.body;
 
   const user = users.find(u => u.email === email);

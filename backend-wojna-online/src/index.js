@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const initGameMQTT = require('./mqtt/game');
+
 
 const usersRoutes = require('./routes/users');
 const authRoutes = require('./routes/auth');
@@ -20,6 +22,8 @@ app.use('/auth', authRoutes);
 app.use('/games', gamesRoutes);
 
 const server = http.createServer(app);
+
+initGameMQTT();
 
 server.listen(PORT, () => {
   console.log(`Backend działa na http://localhost:${PORT}`);
