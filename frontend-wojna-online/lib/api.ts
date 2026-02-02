@@ -23,9 +23,15 @@ export async function registerUser(data: {
     body: JSON.stringify(data),
   });
 
-  if (!res.ok) throw new Error('Błąd rejestracji');
-  return res.json();
+  const result = await res.json();
+
+  if (!res.ok) {
+    throw new Error(result.message || 'Błąd rejestracji');
+  }
+
+  return result;
 }
+
 
 export async function loginUser(data: LoginData) {
   const response = await fetch(`${API_URL}/auth/login`, {
@@ -50,10 +56,9 @@ export async function loginUser(data: LoginData) {
 
 export async function getProfile() {
   const token = localStorage.getItem('token');
-
   if (!token) throw new Error('Brak tokena');
 
-  const res = await fetch(`${API_URL}/users/me`, {
+  const res = await fetch(`${API_URL}/auth/me`, { 
     headers: {
       Authorization: `Bearer ${token}`,
     },

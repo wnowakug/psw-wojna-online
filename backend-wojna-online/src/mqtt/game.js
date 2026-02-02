@@ -1,6 +1,8 @@
 const mqtt = require('mqtt');
 const { getGame, deleteGame } = require('../game/activeGames');
 const users = require('../data/users');
+const db = require('../db');
+
 console.log('GAME MQTT FILE LOADED');
 
 
@@ -91,19 +93,11 @@ function initGameMQTT() {
       const finalWinner =
         game.scores[p1] > game.scores[p2] ? p1 : p2;
 
-      // aktualizacja statystyk użytkowników
-      const u1 = users.find(u => u.id === p1);
-      const u2 = users.find(u => u.id === p2);
+      const loser = finalWinner === p1 ? p2 : p1;
 
-      if (u1 && u2) {
-        if (finalWinner === p1) {
-          u1.wins++;
-          u2.losses++;
-        } else if (finalWinner === p2) {
-          u2.wins++;
-          u1.losses++;
-        }
-      }
+      // aktualizacja w bazie
+      db.run(`UPDATE users SET wins = wins + 1 WHERE id = ?`, [finalWinner]);
+      db.run(`UPDATE users SET losses = losses + 1 WHERE id = ?`, [loser]);
 
       client.publish(
         `game/${gameId}/state`,
@@ -116,7 +110,8 @@ function initGameMQTT() {
 
       deleteGame(gameId);
     }
-  });
-}
+
+    });
+  }
 
 module.exports = initGameMQTT;

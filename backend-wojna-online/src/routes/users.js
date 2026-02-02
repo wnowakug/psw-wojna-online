@@ -1,69 +1,99 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const db = require('../db');
 const auth = require('../middleware/auth');
-const users = require('../data/users');
 
 const router = express.Router();
 
-// POST /users — rejestracja
-router.post('/', (req, res) => {
+//
+// 🔹 POST /users — rejestracja
+//
+router.post('/', async (req, res) => {
   const { nick, email, password } = req.body;
 
   if (!nick || !email || !password) {
-    return res.status(400).json({ message: 'Brak danych' });
+    return res.status(400).json({ message: 'Wszystkie pola są wymagane' });
   }
 
-  const exists = users.find(u => u.email === email);
-  if (exists) {
-    return res.status(400).json({ message: 'Email już istnieje' });
-  }
+  db.get(`SELECT id FROM users WHERE email = ?`, [email], async (err, row) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ message: 'Błąd serwera' });
+    }
 
-  const hashedPassword = bcrypt.hashSync(password, 10);
+    if (row) {
+      return res.status(409).json({
+        message: 'Do tego adresu email jest już przypisane konto'
+      });
+    }
 
-  const newUser = {
-    id: users.length + 1,
-    nick,
-    email,
-    password: hashedPassword,
-    wins: 0,
-    losses: 0
-  };
+    try {
+      const hashedPassword = await bcrypt.hash(password, 10);
 
-  users.push(newUser);
+      db.run(
+        `INSERT INTO users (nick, email, password, wins, losses)
+         VALUES (?, ?, ?, 0, 0)`,
+        [nick, email, hashedPassword],
+        function (err) {
+          if (err) {
+            console.error(err);
+            return res.status(500).json({ message: 'Błąd zapisu do bazy' });
+          }
 
-  res.status(201).json({
-    id: newUser.id,
-    nick: newUser.nick,
-    email: newUser.email
+          res.status(201).json({ message: 'Konto utworzone' });
+        }
+      );
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ message: 'Błąd haszowania hasła' });
+    }
   });
 });
 
-// GET /users/me — PROFIL
+//
+// 🔹 GET /users/me — profil zalogowanego użytkownika
+//
 router.get('/me', auth, (req, res) => {
-  const user = users.find(u => u.id === req.user.id);
+  db.get(
+    `SELECT id, nick, email, wins, losses FROM users WHERE id = ?`,
+    [req.user.id],
+    (err, user) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ message: 'Błąd bazy danych' });
+      }
 
-  if (!user) {
-    return res.status(404).json({ message: 'Nie znaleziono użytkownika' });
-  }
+      if (!user) {
+        return res.status(404).json({ message: 'Użytkownik nie istnieje' });
+      }
 
-  res.json({
-    nick: user.nick,
-    email: user.email,
-    wins: user.wins,
-    losses: user.losses
-  });
+      res.json(user);
+    }
+  );
 });
 
-// GET /users/:id
+//
+// 🔹 GET /users/:id — dane użytkownika po ID (np. do wyświetlania nicku przeciwnika)
+//
 router.get('/:id', (req, res) => {
-  const user = users.find(u => u.id === Number(req.params.id));
-  if (!user) return res.status(404).json({ message: 'Nie znaleziono użytkownika' });
+  const { id } = req.params;
 
-  res.json({
-    id: user.id,
-    nick: user.nick
-  });
+  db.get(
+    `SELECT id, nick, wins, losses FROM users WHERE id = ?`,
+    [id],
+    (err, user) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ message: 'Błąd bazy danych' });
+      }
+
+      if (!user) {
+        return res.status(404).json({ message: 'Użytkownik nie istnieje' });
+      }
+
+      res.json(user);
+    }
+  );
 });
-
 
 module.exports = router;
