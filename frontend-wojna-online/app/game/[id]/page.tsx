@@ -30,6 +30,24 @@ type GameOver = {
 
 type GameMessage = RoundUpdate | RoundResult | GameOver;
 
+function getCardImage(card: any): string | null {
+  if (!card) return null;
+
+  const rankMap: Record<number, string> = {
+    11: 'jack',
+    12: 'queen',
+    13: 'king',
+    14: 'ace'
+  };
+
+  const rank =
+    card.value <= 10 ? card.value.toString() : rankMap[card.value];
+
+  return `/images/${rank}_of_${card.suit}.png`;
+}
+
+
+
 export default function GamePage() {
   const params = useParams();
   const gameId = params.id as string;
@@ -64,7 +82,7 @@ export default function GamePage() {
       });
 
       return () => {
-         socket.disconnect(); // ✅ cleanup
+         socket.disconnect(); // cleanup
       };
    }, [gameId, userId]);
 
@@ -89,7 +107,6 @@ export default function GamePage() {
 
       const game = await getGame(gameId, token);
 
-      // ⛔ jeśli jeszcze nie ma 2 graczy — spróbuj ponownie za chwilę
       if (game.players.length < 2) {
          setTimeout(fetchPlayers, 1000);
          return;
@@ -180,10 +197,27 @@ export default function GamePage() {
       </button>
 
       <h2>Twoja karta ({myNick})</h2>
-      <pre>{myCard ? JSON.stringify(myCard, null, 2) : '—'}</pre>
+      {myCard ? (
+        <img
+          src={getCardImage(myCard)!}
+          alt="Twoja karta"
+          style={{ width: 120 }}
+        />
+      ) : (
+        <p>—</p>
+      )}
 
       <h2>Karta przeciwnika ({opponentNick})</h2>
-      <pre>{opponentCard ? JSON.stringify(opponentCard, null, 2) : '—'}</pre>
+      {opponentCard ? (
+        <img
+          src={getCardImage(opponentCard)!}
+          alt="Karta przeciwnika"
+          style={{ width: 120 }}
+        />
+      ) : (
+        <p>—</p>
+      )}
+
 
       <h2>Punkty</h2>
       <ul>
@@ -197,19 +231,22 @@ export default function GamePage() {
 
 
       {lastResult && (
-        <>
-          <h2>Wynik rundy</h2>
-          <pre>{JSON.stringify(lastResult.cards, null, 2)}</pre>
-          <p>
-            Zwycięzca rundy:{' '}
-            {lastResult.winner === null
-              ? 'Remis'
-              : lastResult.winner === userId
-              ? myNick
-              : opponentNick}
-          </p>
-        </>
-      )}
+      <>
+        <h2>Wynik rundy</h2>
+        <div style={{ display: 'flex', gap: 20 }}>
+          {Object.entries(lastResult.cards).map(([playerId, card]) => (
+            <div key={playerId} style={{ textAlign: 'center' }}>
+              <img
+                src={getCardImage(card)!}
+                alt="Karta z rundy"
+                style={{ width: 100 }}
+              />
+              <p>{Number(playerId) === userId ? myNick : opponentNick}</p>
+            </div>
+          ))}
+        </div>
+      </>
+    )}
 
       {gameOver && (
         <>
