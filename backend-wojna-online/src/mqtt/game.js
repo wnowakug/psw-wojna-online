@@ -1,10 +1,8 @@
 const mqtt = require('mqtt');
 const { getGame, deleteGame } = require('../game/activeGames');
-const users = require('../data/users');
 const db = require('../db');
 
 console.log('GAME MQTT FILE LOADED');
-
 
 function initGameMQTT() {
   const client = mqtt.connect('mqtt://localhost:1883');
@@ -29,21 +27,17 @@ function initGameMQTT() {
       return;
     }
 
-    // GRACZ ZAGRYWA KARTĘ
     if (payload.type !== 'PLAY_CARD') return;
 
     const playerId = payload.playerId;
-    if (!playerId) return;
-    if (!game.players.includes(playerId)) return;
+    if (!playerId || !game.players.includes(playerId)) return;
 
-    // jeśli gracz już zagrał w tej rundzie
+    // gracz już zagrał w tej rundzie
     if (game.currentRound.plays[playerId]) return;
 
-    // dobierz kartę
     const card = game.decks[playerId].shift();
     game.currentRound.plays[playerId] = card;
 
-    // wysyłamy stan częściowy
     client.publish(
       `game/${gameId}/state`,
       JSON.stringify({
@@ -61,7 +55,6 @@ function initGameMQTT() {
     // czekamy aż obaj zagrają
     if (!c1 || !c2) return;
 
-    // rozstrzygnięcie rundy
     let roundWinner = null;
 
     if (c1.value > c2.value) {
@@ -83,35 +76,45 @@ function initGameMQTT() {
       })
     );
 
-    // reset rundy
-    game.currentRound.plays[p1] = null;
-    game.currentRound.plays[p2] = null;
-    game.round++;
+    setTimeout(() => {
+      game.currentRound.plays[p1] = null;
+      game.currentRound.plays[p2] = null;
+      game.round++;
 
-    // koniec gry
-    if (game.round > 26) {
-      const finalWinner =
-        game.scores[p1] > game.scores[p2] ? p1 : p2;
+      if (game.round > 26) {
+        const finalWinner =
+          game.scores[p1] > game.scores[p2] ? p1 : p2;
 
-      const loser = finalWinner === p1 ? p2 : p1;
+        const loser = finalWinner === p1 ? p2 : p1;
 
-      // aktualizacja w bazie
-      db.run(`UPDATE users SET wins = wins + 1 WHERE id = ?`, [finalWinner]);
-      db.run(`UPDATE users SET losses = losses + 1 WHERE id = ?`, [loser]);
+        db.run(`UPDATE users SET wins = wins + 1 WHERE id = ?`, [finalWinner]);
+        db.run(`UPDATE users SET losses = losses + 1 WHERE id = ?`, [loser]);
+
+        client.publish(
+          `game/${gameId}/state`,
+          JSON.stringify({
+            type: 'GAME_OVER',
+            winner: finalWinner,
+            scores: game.scores
+          })
+        );
+
+        deleteGame(gameId);
+        return;
+      }
 
       client.publish(
         `game/${gameId}/state`,
         JSON.stringify({
-          type: 'GAME_OVER',
-          winner: finalWinner,
+          type: 'ROUND_UPDATE',
+          round: game.round,
+          plays: game.currentRound.plays,
           scores: game.scores
         })
       );
 
-      deleteGame(gameId);
-    }
-
-    });
-  }
+    }, 1000);
+  });
+}
 
 module.exports = initGameMQTT;

@@ -5,7 +5,8 @@ import { useParams } from 'next/navigation';
 import client from '@/lib/mqtt';
 import { getUserIdFromToken } from '@/lib/auth';
 import { joinGame, getUserById, getGame } from '@/lib/api';
-import { io } from 'socket.io-client';
+import { io, Socket } from 'socket.io-client';
+import Image from 'next/image';
 
 type RoundUpdate = {
   type: 'ROUND_UPDATE';
@@ -28,6 +29,12 @@ type GameOver = {
   scores: Record<number, number>;
 };
 
+type DisconnectGameOver = {
+  winner: number;
+  loser: number;
+};
+
+
 type GameMessage = RoundUpdate | RoundResult | GameOver;
 
 function getCardImage(card: any): string | null {
@@ -40,9 +47,7 @@ function getCardImage(card: any): string | null {
     14: 'ace'
   };
 
-  const rank =
-    card.value <= 10 ? card.value.toString() : rankMap[card.value];
-
+  const rank = card.value <= 10 ? card.value.toString() : rankMap[card.value];
   return `/images/${rank}_of_${card.suit}.png`;
 }
 
@@ -55,34 +60,30 @@ export default function GamePage() {
   const [plays, setPlays] = useState<Record<number, any>>({});
   const [scores, setScores] = useState<Record<number, number>>({});
   const [lastResult, setLastResult] = useState<RoundResult | null>(null);
+  const [roundCards, setRoundCards] = useState<Record<number, any> | null>(null);
   const [gameOver, setGameOver] = useState<GameOver | null>(null);
   const [ready, setReady] = useState(false);
   const [myNick, setMyNick] = useState('');
   const [opponentNick, setOpponentNick] = useState('');
+  const [opponentId, setOpponentId] = useState<number | null>(null);
+  const [revealed, setRevealed] = useState({ me: false, opponent: false });
 
   const [chatMessages, setChatMessages] = useState<
     { nick: string; message: string; time: number }[]
   >([]);
   const [chatInput, setChatInput] = useState('');
 
-  const socketRef = useRef<any>(null);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    const id = getUserIdFromToken();
-    setUserId(id);
+    setUserId(getUserIdFromToken());
   }, []);
 
   useEffect(() => {
     if (!gameId) return;
-
-    const join = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-      await joinGame(gameId, token);
-    };
-
-    join();
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    joinGame(gameId, token);
   }, [gameId]);
 
   useEffect(() => {
@@ -98,12 +99,16 @@ export default function GamePage() {
         return;
       }
 
-      const opponentId = game.players.find((id: number) => id !== userId);
+      const oppId = game.players.find((id: number) => id !== userId);
+      if (!oppId) return;
+
       const me = await getUserById(userId);
-      const opponent = await getUserById(opponentId);
+      const opponent = await getUserById(oppId);
 
       setMyNick(me.nick);
       setOpponentNick(opponent.nick);
+      setOpponentId(oppId);  
+
     };
 
     fetchPlayers();
@@ -115,7 +120,7 @@ export default function GamePage() {
     const socket = io('http://localhost:4000');
     socketRef.current = socket;
 
-    socket.emit('join-game-room', { gameId, nick: myNick });
+    socket.emit('join-game-room', { gameId, nick: myNick, userId });
 
     socket.on('room-ready', () => setReady(true));
 
@@ -130,18 +135,13 @@ export default function GamePage() {
       ]);
     });
 
-  return () => {
-    socket.disconnect(); // teraz poprawnie
-  };
-}, [gameId, myNick]);
-
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+    return () => {
+      socket.disconnect();
+    };
+  }, [gameId, myNick]);
 
   useEffect(() => {
-    if (!gameId) return;
+    if (!gameId || !userId) return;
 
     const topic = `game/${gameId}/state`;
     client.subscribe(topic);
@@ -151,18 +151,32 @@ export default function GamePage() {
       const data: GameMessage = JSON.parse(message.toString());
 
       if (data.type === 'ROUND_UPDATE') {
+        const entries = Object.entries(data.plays);
+
+        const myPlay = entries.find(([id]) => Number(id) === userId)?.[1];
+        const opponentPlay = entries.find(([id]) => Number(id) !== userId)?.[1];
+
+        setRevealed({
+          me: !!myPlay,
+          opponent: !!opponentPlay
+        });
+        
         setRound(data.round);
         setPlays(data.plays);
         setScores(data.scores);
-        setLastResult(null);
       }
 
       if (data.type === 'ROUND_RESULT') {
         setRound(data.round);
-        setPlays({});
         setScores(data.scores);
         setLastResult(data);
+        setRoundCards(data.cards);
+
+        // pokazujemy odkryte karty z tej rundy
+        setRevealed({ me: true, opponent: true });
       }
+
+
 
       if (data.type === 'GAME_OVER') {
         setGameOver(data);
@@ -175,11 +189,40 @@ export default function GamePage() {
       client.unsubscribe(topic);
       client.off('message', handler);
     };
-  }, [gameId]);
+  }, [gameId, userId, round]);
+
+  const scoresRef = useRef(scores);
+
+  useEffect(() => {
+    scoresRef.current = scores;
+  }, [scores]);
+
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    const handleDisconnectGameOver = (data: { winner: number; loser: number }) => {
+      setGameOver({
+        type: 'GAME_OVER',
+        winner: data.winner,
+        scores: scoresRef.current   // patrz niżej 👇
+      });
+
+      alert('Przeciwnik opuścił grę — wygrywasz walkowerem!');
+    };
+
+    socket.on('game-over-disconnect', handleDisconnectGameOver);
+
+    return () => {
+      socket.off('game-over-disconnect', handleDisconnectGameOver);
+    };
+  }, []);
+
+
 
   const playCard = () => {
     if (!userId || gameOver || !ready) return;
-
     client.publish(
       `game/${gameId}/action`,
       JSON.stringify({ type: 'PLAY_CARD', playerId: userId })
@@ -188,13 +231,7 @@ export default function GamePage() {
 
   const sendMessage = () => {
     if (!chatInput.trim() || !socketRef.current) return;
-
-    socketRef.current.emit('chat-message', {
-      gameId,
-      nick: myNick,
-      message: chatInput
-    });
-
+    socketRef.current.emit('chat-message', { gameId, nick: myNick, message: chatInput });
     setChatInput('');
   };
 
@@ -210,68 +247,119 @@ export default function GamePage() {
       {!ready && <p>Oczekiwanie na drugiego gracza...</p>}
       <p>Runda: {round}</p>
 
-      <button onClick={playCard} disabled={!userId || !!gameOver || !ready}>
+      <div className="card-area">
+        <div className="nick-and-card">
+          <h2>Twoja karta ({myNick})</h2>
+          <div className="card-wrapper">
+            <div className="card" data-flipped={revealed.me}>
+              {/* TYŁ KARTY */}
+              <div className="card-face card-back">
+                <Image
+                  src="/images/reverse.png"
+                  alt="Rewers"
+                  width={120}
+                  height={174}
+                />
+              </div>
+
+              <div className="card-face card-front">
+                {/* PRZÓD KARTY*/}
+                <Image
+                  src={getCardImage(myCard) || '/images/reverse.png'}
+                  alt="Twoja karta"
+                  width={120}
+                  height={174}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="nick-and-card">
+          <h2>Karta przeciwnika ({opponentNick})</h2>
+          <div className="card-wrapper">
+            <div className="card" data-flipped={revealed.opponent}>
+              {/* TYŁ KARTY */}
+              <div className="card-face card-back">
+                <Image
+                  src="/images/reverse.png"
+                  alt="Rewers karty"
+                  width={120}
+                  height={174}
+                />
+              </div>
+
+              {/* PRZÓD KARTY*/}
+              <div className="card-face card-front">
+                <Image
+                  src={getCardImage(opponentCard) || '/images/reverse.png'}
+                  alt="Karta przeciwnika"
+                  width={120}
+                  height={174}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button className="playButton" onClick={playCard} disabled={!userId || !!gameOver || !ready}>
         Zagraj kartę
       </button>
 
-      <h2>Twoja karta ({myNick})</h2>
-      {myCard ? <img src={getCardImage(myCard)!} style={{ width: 120 }} /> : <p>—</p>}
-
-      <h2>Karta przeciwnika ({opponentNick})</h2>
-      {opponentCard ? (
-        <img src={getCardImage(opponentCard)!} style={{ width: 120 }} />
-      ) : (
-        <p>—</p>
-      )}
-
       <h2>Punkty</h2>
       <ul>
-        <li>{myNick}: {userId ? scores[userId] ?? 0 : 0}</li>
-        <li>{opponentNick}: {Object.values(scores).find((_, i) => i === 1) ?? 0}</li>
+        <li>{myNick}: {userId != null ? scores[userId] ?? 0 : 0}</li>
+        <li>{opponentNick}: {opponentId != null ? scores[opponentId] ?? 0 : 0}</li>
+
       </ul>
 
-      {lastResult && (
+      {lastResult && roundCards && (
         <>
           <h2>Wynik rundy</h2>
           <p>
-            Zwycięzca rundy:{' '}
+            <strong>Zwycięzca rundy:</strong>{' '}
             {lastResult.winner === null
               ? 'Remis'
               : lastResult.winner === userId
               ? myNick
               : opponentNick}
           </p>
-        </>
-      )}
 
-      {gameOver && (
-        <>
-          <h2>Koniec gry</h2>
-          <p>Zwycięzca gry: {gameOver.winner === userId ? myNick : opponentNick}</p>
-        </>
-      )}
-
-      <hr style={{ margin: '30px 0' }} />
-      <h2>Czat gry</h2>
-
-      <div style={{ border: '1px solid #ccc', padding: 10, height: 200, overflowY: 'auto' }}>
-        {chatMessages.map((msg, i) => (
-          <div key={i}>
-            <strong>{msg.nick}:</strong> {msg.message}
+          <div style={{ display: 'flex', gap: 30 }}>
+            {Object.entries(roundCards).map(([pid, card]) => (
+              <div key={pid} style={{ textAlign: 'center' }}>
+                <Image src={getCardImage(card)!} alt="Karta" width={100} height={145} />
+                <p>{Number(pid) === userId ? myNick : opponentNick}</p>
+              </div>
+            ))}
           </div>
-        ))}
-        <div ref={chatEndRef} />
-      </div>
+        </>
+      )}
 
-      <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-        <input
-          value={chatInput}
-          onChange={(e) => setChatInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-          placeholder="Napisz wiadomość..."
-          style={{ flex: 1 }}
-        />
-        <button onClick={sendMessage}>Wyślij</button>
+      <div className="chat">
+        <div className="chat-box">
+          {chatMessages.map((msg, i) => (
+            <div
+              key={i}
+              className={`chat-message ${msg.nick === 'SYSTEM' ? 'system' : ''}`}
+            >
+              {msg.nick !== 'SYSTEM' && <strong>{msg.nick}: </strong>}
+              {msg.message}
+            </div>
+          ))}
+        </div>
+
+        <div className="chat-input-row">
+          <input
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+            placeholder="Napisz wiadomość..."
+            style={{ flex: 1 }}
+          />
+          <button onClick={sendMessage}>Wyślij</button>
+        </div>
       </div>
     </main>
   );

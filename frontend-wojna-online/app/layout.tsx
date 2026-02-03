@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import LogoutButton from './components/LogoutButton';
+import './globals.css';
 
 
 export const metadata = {
@@ -12,15 +13,32 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="pl">
       <body>
         <header>
-          <nav>
-            <ul style={{ display: 'flex', gap: '1rem' }}>
-              <li><a href="/">Strona główna</a></li>
-              <li><a href="/login">Logowanie</a></li>
-              <li><a href="/register">Rejestracja</a></li>
-              <li><a href="/profile">Profil</a></li>
-              <li><LogoutButton /></li>
-            </ul>
-          </nav>
+<nav>
+  <ul className="navClass">
+    <li>
+      <form action="/">
+        <button type="submit">Strona główna</button>
+      </form>
+    </li>
+    <li>
+      <form action="/login">
+        <button type="submit">Logowanie</button>
+      </form>
+    </li>
+    <li>
+      <form action="/register">
+        <button type="submit">Rejestracja</button>
+      </form>
+    </li>
+    <li>
+      <form action="/profile">
+        <button type="submit">Profil</button>
+      </form>
+    </li>
+    <li><LogoutButton/></li>
+  </ul>
+</nav>
+
           <hr />
         </header>
 
