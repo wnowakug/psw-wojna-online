@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import client from '@/lib/mqtt';
 import { getUserIdFromToken } from '@/lib/auth';
@@ -46,14 +46,12 @@ function getCardImage(card: any): string | null {
   return `/images/${rank}_of_${card.suit}.png`;
 }
 
-
-
 export default function GamePage() {
   const params = useParams();
   const gameId = params.id as string;
 
   const [userId, setUserId] = useState<number | null>(null);
-  const [round, setRound] = useState<number>(1);
+  const [round, setRound] = useState(1);
   const [plays, setPlays] = useState<Record<number, any>>({});
   const [scores, setScores] = useState<Record<number, number>>({});
   const [lastResult, setLastResult] = useState<RoundResult | null>(null);
@@ -62,71 +60,86 @@ export default function GamePage() {
   const [myNick, setMyNick] = useState('');
   const [opponentNick, setOpponentNick] = useState('');
 
-  // USER ID z JWT
+  const [chatMessages, setChatMessages] = useState<
+    { nick: string; message: string; time: number }[]
+  >([]);
+  const [chatInput, setChatInput] = useState('');
+
+  const socketRef = useRef<any>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     const id = getUserIdFromToken();
     setUserId(id);
   }, []);
 
-  // SOCKET.IO – pokój gry
-   useEffect(() => {
-      if (!gameId || !userId) return;
-
-      const socket = io('http://localhost:4000');
-
-      socket.emit('join-game-room', gameId);
-
-      socket.on('room-ready', () => {
-         console.log('Obaj gracze gotowi');
-         setReady(true);
-      });
-
-      return () => {
-         socket.disconnect(); // cleanup
-      };
-   }, [gameId, userId]);
-
-
-
-  // DOŁĄCZENIE DO GRY (REST)
   useEffect(() => {
+    if (!gameId) return;
+
     const join = async () => {
       const token = localStorage.getItem('token');
       if (!token) return;
       await joinGame(gameId, token);
     };
 
-    if (gameId) join();
+    join();
   }, [gameId]);
 
-  // POBRANIE NICKÓW GRACZY
-   useEffect(() => {
-   const fetchPlayers = async () => {
+  useEffect(() => {
+    if (!gameId || !userId) return;
+
+    const fetchPlayers = async () => {
       const token = localStorage.getItem('token');
-      if (!token || !userId) return;
+      if (!token) return;
 
       const game = await getGame(gameId, token);
-
       if (game.players.length < 2) {
-         setTimeout(fetchPlayers, 1000);
-         return;
+        setTimeout(fetchPlayers, 1000);
+        return;
       }
 
       const opponentId = game.players.find((id: number) => id !== userId);
-      if (!opponentId) return;
-
       const me = await getUserById(userId);
       const opponent = await getUserById(opponentId);
 
       setMyNick(me.nick);
       setOpponentNick(opponent.nick);
-   };
+    };
 
-   fetchPlayers();
-   }, [gameId, userId]);
+    fetchPlayers();
+  }, [gameId, userId]);
+
+  useEffect(() => {
+    if (!gameId || !myNick) return;
+
+    const socket = io('http://localhost:4000');
+    socketRef.current = socket;
+
+    socket.emit('join-game-room', { gameId, nick: myNick });
+
+    socket.on('room-ready', () => setReady(true));
+
+    socket.on('chat-message', (msg) => {
+      setChatMessages((prev) => [...prev, msg]);
+    });
+
+    socket.on('chat-system', (msg) => {
+      setChatMessages((prev) => [
+        ...prev,
+        { nick: 'SYSTEM', message: msg.message, time: Date.now() }
+      ]);
+    });
+
+  return () => {
+    socket.disconnect(); // teraz poprawnie
+  };
+}, [gameId, myNick]);
 
 
-  // MQTT SUBSKRYPCJA STANU GRY
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
   useEffect(() => {
     if (!gameId) return;
 
@@ -135,7 +148,6 @@ export default function GamePage() {
 
     const handler = (t: string, message: any) => {
       if (t !== topic) return;
-
       const data: GameMessage = JSON.parse(message.toString());
 
       if (data.type === 'ROUND_UPDATE') {
@@ -159,7 +171,6 @@ export default function GamePage() {
     };
 
     client.on('message', handler);
-
     return () => {
       client.unsubscribe(topic);
       client.off('message', handler);
@@ -171,11 +182,20 @@ export default function GamePage() {
 
     client.publish(
       `game/${gameId}/action`,
-      JSON.stringify({
-        type: 'PLAY_CARD',
-        playerId: userId
-      })
+      JSON.stringify({ type: 'PLAY_CARD', playerId: userId })
     );
+  };
+
+  const sendMessage = () => {
+    if (!chatInput.trim() || !socketRef.current) return;
+
+    socketRef.current.emit('chat-message', {
+      gameId,
+      nick: myNick,
+      message: chatInput
+    });
+
+    setChatInput('');
   };
 
   const myCard = userId ? plays[userId] : null;
@@ -187,9 +207,7 @@ export default function GamePage() {
   return (
     <main style={{ padding: 20 }}>
       <h1>Gra ID: {gameId}</h1>
-
       {!ready && <p>Oczekiwanie na drugiego gracza...</p>}
-
       <p>Runda: {round}</p>
 
       <button onClick={playCard} disabled={!userId || !!gameOver || !ready}>
@@ -197,66 +215,64 @@ export default function GamePage() {
       </button>
 
       <h2>Twoja karta ({myNick})</h2>
-      {myCard ? (
-        <img
-          src={getCardImage(myCard)!}
-          alt="Twoja karta"
-          style={{ width: 120 }}
-        />
-      ) : (
-        <p>—</p>
-      )}
+      {myCard ? <img src={getCardImage(myCard)!} style={{ width: 120 }} /> : <p>—</p>}
 
       <h2>Karta przeciwnika ({opponentNick})</h2>
       {opponentCard ? (
-        <img
-          src={getCardImage(opponentCard)!}
-          alt="Karta przeciwnika"
-          style={{ width: 120 }}
-        />
+        <img src={getCardImage(opponentCard)!} style={{ width: 120 }} />
       ) : (
         <p>—</p>
       )}
 
-
       <h2>Punkty</h2>
       <ul>
-      <li>{myNick}: {userId ? scores[userId] ?? 0 : 0}</li>
-      <li>{opponentNick}: {
-         userId
-            ? scores[Number(Object.keys(scores).find(id => Number(id) !== userId))] ?? 0
-            : 0
-      }</li>
+        <li>{myNick}: {userId ? scores[userId] ?? 0 : 0}</li>
+        <li>{opponentNick}: {Object.values(scores).find((_, i) => i === 1) ?? 0}</li>
       </ul>
 
-
       {lastResult && (
-      <>
-        <h2>Wynik rundy</h2>
-        <div style={{ display: 'flex', gap: 20 }}>
-          {Object.entries(lastResult.cards).map(([playerId, card]) => (
-            <div key={playerId} style={{ textAlign: 'center' }}>
-              <img
-                src={getCardImage(card)!}
-                alt="Karta z rundy"
-                style={{ width: 100 }}
-              />
-              <p>{Number(playerId) === userId ? myNick : opponentNick}</p>
-            </div>
-          ))}
-        </div>
-      </>
-    )}
+        <>
+          <h2>Wynik rundy</h2>
+          <p>
+            Zwycięzca rundy:{' '}
+            {lastResult.winner === null
+              ? 'Remis'
+              : lastResult.winner === userId
+              ? myNick
+              : opponentNick}
+          </p>
+        </>
+      )}
 
       {gameOver && (
         <>
           <h2>Koniec gry</h2>
-          <p>
-            Zwycięzca gry:{' '}
-            {gameOver.winner === userId ? myNick : opponentNick}
-          </p>
+          <p>Zwycięzca gry: {gameOver.winner === userId ? myNick : opponentNick}</p>
         </>
       )}
+
+      <hr style={{ margin: '30px 0' }} />
+      <h2>Czat gry</h2>
+
+      <div style={{ border: '1px solid #ccc', padding: 10, height: 200, overflowY: 'auto' }}>
+        {chatMessages.map((msg, i) => (
+          <div key={i}>
+            <strong>{msg.nick}:</strong> {msg.message}
+          </div>
+        ))}
+        <div ref={chatEndRef} />
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+        <input
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+          placeholder="Napisz wiadomość..."
+          style={{ flex: 1 }}
+        />
+        <button onClick={sendMessage}>Wyślij</button>
+      </div>
     </main>
   );
 }

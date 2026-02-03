@@ -1,17 +1,32 @@
 module.exports = function initLobby(io) {
   io.on('connection', (socket) => {
 
-    socket.on('join-game-room', (gameId) => {
-      const roomName = `game:${gameId}`;
-      socket.join(roomName);
+    socket.on('join-game-room', ({ gameId, nick }) => {
+      socket.join(`game-${gameId}`);
 
-      const room = io.sockets.adapter.rooms.get(roomName);
-      const size = room ? room.size : 0;
+      //Powiadom innych graczy w pokoju
+      socket.to(`game-${gameId}`).emit('chat-system', {
+        message: `${nick} dołączył do chatu`
+      });
+    });
 
-      // gdy są 2 osoby — obie dostają sygnał startu
-      if (size === 2) {
-        io.to(roomName).emit('room-ready');
-      }
+    socket.on('chat-message', ({ gameId, nick, message }) => {
+      io.to(`game-${gameId}`).emit('chat-message', {
+        nick,
+        message
+      });
+    });
+
+    socket.on('disconnecting', () => {
+      const rooms = Array.from(socket.rooms);
+
+      rooms.forEach(room => {
+        if (room.startsWith('game-')) {
+          socket.to(room).emit('chat-system', {
+            message: `Gracz opuścił czat`
+          });
+        }
+      });
     });
 
   });
