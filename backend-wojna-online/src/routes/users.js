@@ -5,9 +5,7 @@ const auth = require('../middleware/auth');
 
 const router = express.Router();
 
-//
-// 🔹 POST /users — rejestracja
-//
+// POST /users — rejestracja
 router.post('/', async (req, res) => {
   const { nick, email, password } = req.body;
 
@@ -28,8 +26,6 @@ router.post('/', async (req, res) => {
     }
 
     try {
-      const hashedPassword = await bcrypt.hash(password, 10);
-
       db.run(
         `INSERT INTO users (nick, email, password, wins, losses)
          VALUES (?, ?, ?, 0, 0)`,
@@ -50,9 +46,7 @@ router.post('/', async (req, res) => {
   });
 });
 
-//
-// 🔹 GET /users/me — profil zalogowanego użytkownika
-//
+// GET /users/me — profil zalogowanego użytkownika
 router.get('/me', auth, (req, res) => {
   db.get(
     `SELECT id, nick, email, wins, losses FROM users WHERE id = ?`,
@@ -72,9 +66,7 @@ router.get('/me', auth, (req, res) => {
   );
 });
 
-//
-// 🔹 GET /users/:id — dane użytkownika po ID (np. do wyświetlania nicku przeciwnika)
-//
+//GET /users/:id — dane użytkownika po ID (np. do wyświetlania nicku przeciwnika)
 router.get('/:id', (req, res) => {
   const { id } = req.params;
 

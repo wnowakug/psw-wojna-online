@@ -20,9 +20,9 @@ router.post('/', auth, (req, res) => {
   const game = {
     id: Date.now().toString(),
     players: [userId],
-    decks: {},              // talie rozdamy dopiero gdy będzie 2 graczy
+    decks: {},
     scores: {
-      [userId]: 0           // 🔥 zawsze start od 0
+      [userId]: 0   
     },
     currentRound: {
       plays: {
@@ -54,14 +54,14 @@ router.post('/:id/join', auth, (req, res) => {
     return res.status(400).json({ message: 'Gra jest pełna' });
   }
 
-  // ➕ Dodajemy drugiego gracza
+  //Dodajemy drugiego gracza
   game.players.push(userId);
 
-  // 🔥 Inicjalizacja punktów i plays
+  //Inicjalizacja punktów i plays
   game.scores[userId] = 0;
   game.currentRound.plays[userId] = null;
 
-  // 🎴 Gdy mamy już 2 graczy — rozdajemy karty
+  //Gdy mamy już 2 graczy — rozdajemy karty
   if (game.players.length === 2) {
     const deck = createDeck();
     const half = Math.floor(deck.length / 2);

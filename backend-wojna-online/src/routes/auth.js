@@ -20,7 +20,7 @@ router.post('/login', (req, res) => {
     if (!user) {
       return res.status(401).json({ message: 'Nieprawidłowe dane' });
     }
-
+    //porównywanie zhashowanego hasła z podanym
     const match = bcrypt.compareSync(password, user.password);
     console.log("PASSWORD MATCH:", match);
 
@@ -28,6 +28,7 @@ router.post('/login', (req, res) => {
       return res.status(401).json({ message: 'Nieprawidłowe dane' });
     }
 
+    //generowanie tokenu jwt gdy dane się zgadzają
     const token = jwt.sign(
       { id: user.id, email: user.email, nick: user.nick },
       req.app.get('jwt-secret'),

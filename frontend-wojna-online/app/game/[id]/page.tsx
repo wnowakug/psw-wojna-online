@@ -34,9 +34,9 @@ type DisconnectGameOver = {
   loser: number;
 };
 
-
 type GameMessage = RoundUpdate | RoundResult | GameOver;
 
+// Zamienia obiekt karty na ścieżkę do obrazka
 function getCardImage(card: any): string | null {
   if (!card) return null;
 
@@ -55,6 +55,7 @@ export default function GamePage() {
   const params = useParams();
   const gameId = params.id as string;
 
+  // Stany gry
   const [userId, setUserId] = useState<number | null>(null);
   const [round, setRound] = useState(1);
   const [plays, setPlays] = useState<Record<number, any>>({});
@@ -63,22 +64,30 @@ export default function GamePage() {
   const [roundCards, setRoundCards] = useState<Record<number, any> | null>(null);
   const [gameOver, setGameOver] = useState<GameOver | null>(null);
   const [ready, setReady] = useState(false);
+
+  // Dane graczy
   const [myNick, setMyNick] = useState('');
   const [opponentNick, setOpponentNick] = useState('');
   const [opponentId, setOpponentId] = useState<number | null>(null);
+
+  // Czy karty są aktualnie odkryte (do animacji flip)
   const [revealed, setRevealed] = useState({ me: false, opponent: false });
 
+  // Czat
   const [chatMessages, setChatMessages] = useState<
     { nick: string; message: string; time: number }[]
   >([]);
   const [chatInput, setChatInput] = useState('');
 
+  // Referencja do połączenia Socket.IO
   const socketRef = useRef<Socket | null>(null);
 
+  // Pobranie ID użytkownika z JWT przy wejściu na stronę
   useEffect(() => {
     setUserId(getUserIdFromToken());
   }, []);
 
+  // Dołączenie do gry po stronie REST (rejestracja gracza w grze)
   useEffect(() => {
     if (!gameId) return;
     const token = localStorage.getItem('token');
@@ -86,6 +95,7 @@ export default function GamePage() {
     joinGame(gameId, token);
   }, [gameId]);
 
+  // Pobranie nicków obu graczy i ustalenie opponentId
   useEffect(() => {
     if (!gameId || !userId) return;
 
@@ -94,6 +104,8 @@ export default function GamePage() {
       if (!token) return;
 
       const game = await getGame(gameId, token);
+
+      // Czekamy aż drugi gracz dołączy
       if (game.players.length < 2) {
         setTimeout(fetchPlayers, 1000);
         return;
@@ -107,27 +119,31 @@ export default function GamePage() {
 
       setMyNick(me.nick);
       setOpponentNick(opponent.nick);
-      setOpponentId(oppId);  
-
+      setOpponentId(oppId);
     };
 
     fetchPlayers();
   }, [gameId, userId]);
 
+  // Połączenie WebSocket io – czat + status pokoju
   useEffect(() => {
     if (!gameId || !myNick) return;
 
     const socket = io('http://localhost:4000');
     socketRef.current = socket;
 
+    // Informujemy serwer, że dołączyliśmy do pokoju gry
     socket.emit('join-game-room', { gameId, nick: myNick, userId });
 
+    // Obaj gracze są gotowi
     socket.on('room-ready', () => setReady(true));
 
+    // Wiadomości czatu od graczy
     socket.on('chat-message', (msg) => {
       setChatMessages((prev) => [...prev, msg]);
     });
 
+    // Wiadomości systemowe (np. dołączenie gracza)
     socket.on('chat-system', (msg) => {
       setChatMessages((prev) => [
         ...prev,
@@ -138,8 +154,9 @@ export default function GamePage() {
     return () => {
       socket.disconnect();
     };
-  }, [gameId, myNick]);
+  }, [gameId, myNick, userId]);
 
+  // Subskrypcja MQTT – główna logika aktualizacji stanu gry
   useEffect(() => {
     if (!gameId || !userId) return;
 
@@ -150,34 +167,36 @@ export default function GamePage() {
       if (t !== topic) return;
       const data: GameMessage = JSON.parse(message.toString());
 
+      // Aktualizacja stanu w trakcie rundy
       if (data.type === 'ROUND_UPDATE') {
         const entries = Object.entries(data.plays);
 
         const myPlay = entries.find(([id]) => Number(id) === userId)?.[1];
         const opponentPlay = entries.find(([id]) => Number(id) !== userId)?.[1];
 
+        // Odkrywamy tylko te karty, które zostały już zagrane
         setRevealed({
           me: !!myPlay,
           opponent: !!opponentPlay
         });
-        
+
         setRound(data.round);
         setPlays(data.plays);
         setScores(data.scores);
       }
 
+      // Wynik zakończonej rundy
       if (data.type === 'ROUND_RESULT') {
         setRound(data.round);
         setScores(data.scores);
         setLastResult(data);
         setRoundCards(data.cards);
 
-        // pokazujemy odkryte karty z tej rundy
+        // Obie karty odkryte w podsumowaniu rundy
         setRevealed({ me: true, opponent: true });
       }
 
-
-
+      // Koniec całej gry
       if (data.type === 'GAME_OVER') {
         setGameOver(data);
         setScores(data.scores);
@@ -189,15 +208,15 @@ export default function GamePage() {
       client.unsubscribe(topic);
       client.off('message', handler);
     };
-  }, [gameId, userId, round]);
+  }, [gameId, userId]);
 
+  // Ref przechowujący aktualne scores do użycia w callbackach socketów
   const scoresRef = useRef(scores);
-
   useEffect(() => {
     scoresRef.current = scores;
   }, [scores]);
 
-
+  // Obsługa walkowera, gdy przeciwnik się rozłączy
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket) return;
@@ -206,7 +225,7 @@ export default function GamePage() {
       setGameOver({
         type: 'GAME_OVER',
         winner: data.winner,
-        scores: scoresRef.current   // patrz niżej 👇
+        scores: scoresRef.current
       });
 
       alert('Przeciwnik opuścił grę — wygrywasz walkowerem!');
@@ -219,8 +238,7 @@ export default function GamePage() {
     };
   }, []);
 
-
-
+  // Wysłanie ruchu zagrania karty przez MQTT
   const playCard = () => {
     if (!userId || gameOver || !ready) return;
     client.publish(
@@ -229,12 +247,14 @@ export default function GamePage() {
     );
   };
 
+  // Wysłanie wiadomości na czat przez Socket.IO
   const sendMessage = () => {
     if (!chatInput.trim() || !socketRef.current) return;
     socketRef.current.emit('chat-message', { gameId, nick: myNick, message: chatInput });
     setChatInput('');
   };
 
+  // Aktualnie zagrane karty w tej rundzie
   const myCard = userId ? plays[userId] : null;
   const opponentCard =
     userId && plays
@@ -336,6 +356,26 @@ export default function GamePage() {
           </div>
         </>
       )}
+
+      {gameOver && (
+        <div style={{
+          marginTop: 20,
+          padding: 15,
+          border: '2px solid #16a34a',
+          borderRadius: 8,
+          background: '#052e16',
+          color: '#bbf7d0'
+        }}>
+          <h2>Koniec gry</h2>
+          <p>
+            Zwycięzca:{' '}
+            <strong>
+              {gameOver.winner === userId ? myNick : opponentNick}
+            </strong>
+          </p>
+        </div>
+      )}
+
 
       <div className="chat">
         <div className="chat-box">
