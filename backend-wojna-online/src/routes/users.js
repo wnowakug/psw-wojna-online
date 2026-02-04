@@ -26,6 +26,8 @@ router.post('/', async (req, res) => {
     }
 
     try {
+
+      const hashedPassword = await bcrypt.hash(password, 10);
       db.run(
         `INSERT INTO users (nick, email, password, wins, losses)
          VALUES (?, ?, ?, 0, 0)`,
@@ -66,7 +68,7 @@ router.get('/me', auth, (req, res) => {
   );
 });
 
-//GET /users/:id — dane użytkownika po ID (np. do wyświetlania nicku przeciwnika)
+//GET /users/:id — dane użytkownika po ID
 router.get('/:id', (req, res) => {
   const { id } = req.params;
 
